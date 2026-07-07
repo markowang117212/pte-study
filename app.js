@@ -228,9 +228,16 @@ function renderStreak() {
 
 /* ---------------- router ---------------- */
 const APP = $("#app");
+let VKEY = null;
+document.addEventListener("keydown", e => {
+  if (!VKEY) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  if ([" ", "Enter", "1", "2", "3"].includes(e.key)) { e.preventDefault(); const f = VKEY; f(e.key); }
+});
 window.addEventListener("hashchange", route);
 function route() {
-  clearTimers(); stopSpeak(); stopRecording();
+  clearTimers(); stopSpeak(); stopRecording(); VKEY = null;
   const h = location.hash || "#home";
   $all("#nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === h.split("/")[0]));
   const [view, arg] = h.slice(1).split("/");
@@ -685,57 +692,148 @@ function viewReview() {
 
 window.clearHarvest = function () { if (confirm("清空所有自动收录的错词卡？（内置词库保留）")) { HARVEST = []; lsSet("harvestVocab", HARVEST); viewMemory(); } };
 function viewVocab() {
-  const queue = shuffle(vocabDue()); let i = 0; const stats = { done: 0 };
-  if (!queue.length) { APP.innerHTML = "<div class='card'><h2>今日词卡已清空 ✅</h2><button class='btn' onclick=\"location.hash='#memory'\">返回记忆库</button></div>"; return; }
-  const next = () => {
-    if (i >= queue.length) { APP.innerHTML = `<div class='card'><h2>词汇复习完成 ✅ 共 ${stats.done} 张</h2><button class='btn primary' onclick="location.hash='#home'">回首页</button></div>`; return; }
-    renderCard(queue[i++]);
+  const all = shuffle(vocabDue());
+  if (!all.length) { APP.innerHTML = "<div class='card'><h2>今日词卡已清空 ✅</h2><p class='muted small'>明天会有新到期卡片；也可在设置页调高每日新卡上限。</p><button class='btn' onclick=\"location.hash='#memory'\">返回记忆库</button></div>"; return; }
+  const total = all.length;
+  const newCount = all.filter(c => !VSRS[c.id]).length;
+  let i = 0; const stats = { done: 0, known: 0, fuzzy: 0, forgot: 0 };
+  const mode = () => CFG.vocabMode || "self";
+
+  const header = () => `
+    <div class="flex spread" style="margin-bottom:6px">
+      <div><span class="tag">背单词</span><span class="muted small">新学 ${newCount} · 复习 ${total - newCount}</span></div>
+      <div class="flex" style="gap:6px">
+        <span class="pill ${mode() === "self" ? "on" : ""}" id="mSelf">自评</span>
+        <span class="pill ${mode() === "choice" ? "on" : ""}" id="mChoice">四选一</span>
+        <span class="muted small">${stats.done} / ${total}</span>
+      </div>
+    </div>
+    <div class="bar" style="margin-bottom:14px"><i style="width:${(stats.done / total * 100).toFixed(1)}%"></i></div>`;
+  const bindMode = () => {
+    $("#mSelf").addEventListener("click", () => { CFG.vocabMode = "self"; lsSet("cfg", CFG); render(); });
+    $("#mChoice").addEventListener("click", () => { CFG.vocabMode = "choice"; lsSet("cfg", CFG); render(); });
   };
-  const gradeRow = () => `<div class="flex" style="margin-top:8px"><span class="muted small">记忆评级：</span>
-        <button class="btn" data-q="0">重来</button><button class="btn" data-q="3">困难</button>
-        <button class="btn primary" data-q="4">良好</button><button class="btn" data-q="5">容易</button></div>`;
-  const bindGrade = (c) => { $all("#vres [data-q]").forEach(b => b.addEventListener("click", () => { vGrade(c.id, +b.dataset.q); stats.done++; next(); })); };
-  const renderCard = (c) => {
-    const kind = c.kind;
-    const tagTxt = kind === "spell" ? "拼写" : kind === "word" ? "词义 L" + (c.level || 2) : "搭配";
-    if (kind === "word") {
-      APP.innerHTML = `<div class="card">
-        <div class="flex spread"><div><span class="tag">${tagTxt}</span><span class="muted small">${c.id} · 剩余 ${queue.length - i + 1}</span></div></div>
-        <div class="stimulus" style="margin-top:10px;font-size:28px;font-weight:800">${esc(c.word)} <button class="btn" id="vplay">🔊</button></div>
-        <div class="flex"><button class="btn primary" id="vshow">显示释义</button></div>
-        <div id="vres" style="margin-top:10px"></div></div>`;
-      const play = () => speak(c.word, { rate: 0.95 }, null);
-      $("#vplay").addEventListener("click", play); later(play, 300);
-      $("#vshow").addEventListener("click", () => {
-        $("#vres").innerHTML = `<p style="font-size:17px"><b>${esc(c.cn || "")}</b></p>${c.example ? `<p class="small muted">${esc(c.example)}</p>` : ""}${gradeRow()}`;
-        bindGrade(c);
-        if (c.example) speak(c.example, {}, null);
-      });
-      return;
-    }
-    const isSpell = kind === "spell";
-    APP.innerHTML = `<div class="card">
-      <div class="flex spread"><div><span class="tag">${tagTxt}</span><span class="muted small">${c.id} · 剩余 ${queue.length - i + 1}</span></div></div>
-      <div class="stimulus" style="margin-top:10px">${isSpell ? `<button class="btn" id="vplay">🔊 播放</button> <span class="muted small">听音拼写（考试标准：拼错=0分）</span>` : esc(c.sentence).replace("___", "<b class='blankslot'>&nbsp;___&nbsp;</b>")}</div>
-      <p class="muted">${esc(c.cn || "")}</p>
-      <div class="flex"><input type="text" id="vin" style="flex:1" placeholder="输入${isSpell ? "单词" : "答案"}后回车" autocomplete="off">
-      <button class="btn primary" id="vsub">检查</button><button class="btn" id="vshow">看答案</button></div>
-      <div id="vres" style="margin-top:10px"></div></div>`;
-    const answer = isSpell ? c.word : c.answer;
-    if (isSpell) { const play = () => speak(c.word, { rate: 0.95 }, null); $("#vplay").addEventListener("click", play); later(play, 300); }
-    const showResult = (ok) => {
-      $("#vres").innerHTML = `<p>${ok ? "<span class='diffok'>✔ 正确</span>" : "<span class='diffbad'>✘</span>"} 答案：<b>${esc(answer)}</b></p>
-        ${isSpell && c.example ? `<p class="small muted">${esc(c.example)}</p>` : ""}${gradeRow()}`;
-      bindGrade(c);
+  const finish = () => { VKEY = null; APP.innerHTML = `<div class="card"><h2>今日词卡完成 ✅</h2>
+    <p>共 ${stats.done} 张 — <span class="diffok">认识 ${stats.known}</span> · <span style="color:var(--warn)">模糊 ${stats.fuzzy}</span> · <span class="diffbad">不认识 ${stats.forgot}</span></p>
+    <div class="flex"><button class="btn primary" onclick="location.hash='#home'">回首页</button>
+    <button class="btn" onclick="viewVocab()">再来一轮</button></div></div>`; };
+  const advance = (q) => { const c = all[i];
+    if (q >= 4) stats.known++; else if (q === 3) stats.fuzzy++; else stats.forgot++;
+    vGrade(c.id, q); stats.done++; i++; render(); };
+
+  const render = () => {
+    VKEY = null;
+    if (i >= total) { finish(); return; }
+    const c = all[i];
+    if (c.kind === "spell") renderSpell(c);
+    else if (mode() === "choice") renderChoice(c);
+    else renderSelf(c);
+  };
+
+  const bigBtn = (id, label, color) => `<button class="btn" id="${id}" style="flex:1;padding:15px 4px;font-size:16px;font-weight:700;color:var(--${color});border-color:var(--${color})">${label}</button>`;
+
+  const renderSelf = (c) => {
+    const isColloc = c.kind === "colloc";
+    APP.innerHTML = `<div class="card">${header()}
+      <div style="text-align:center;padding:30px 0 22px">
+        ${isColloc
+          ? `<div class="stimulus" style="font-size:19px;text-align:left">${esc(c.sentence).replace("___", "<b class='blankslot'>&nbsp;___&nbsp;</b>")}</div><p class="muted small">心里想出空格里的词，再自评</p>`
+          : `<div style="font-size:42px;font-weight:800;letter-spacing:.5px">${esc(c.word)}</div><button class="btn ghost" id="vplay" style="font-size:18px">🔊</button>`}
+      </div>
+      <div class="flex" style="gap:8px">${bigBtn("bKnow", "认识", "ok")}${bigBtn("bFuzzy", "模糊", "warn")}${bigBtn("bForgot", "不认识", "bad")}</div>
+      <p class="muted small" style="text-align:center;margin-bottom:0">快捷键 1 / 2 / 3</p></div>`;
+    bindMode();
+    if (!isColloc) { const play = () => speak(c.word, { rate: 0.95 }, null); $("#vplay").addEventListener("click", play); later(play, 250); }
+    const toBack = (q) => renderBack(c, q);
+    $("#bKnow").addEventListener("click", () => toBack(4));
+    $("#bFuzzy").addEventListener("click", () => toBack(3));
+    $("#bForgot").addEventListener("click", () => toBack(0));
+    VKEY = k => { if (k === "1") toBack(4); else if (k === "2") toBack(3); else if (k === "3") toBack(0); };
+  };
+
+  const renderBack = (c, q) => {
+    const isColloc = c.kind === "colloc";
+    const head = isColloc
+      ? `<div class="stimulus" style="font-size:18px;text-align:left">${esc(c.sentence).replace("___", `<b style="color:var(--brand)">&nbsp;${esc(c.answer)}&nbsp;</b>`)}</div>`
+      : `<div style="font-size:36px;font-weight:800">${esc(c.word)} <button class="btn ghost" id="vplay">🔊</button></div>`;
+    APP.innerHTML = `<div class="card">${header()}
+      <div style="text-align:center;padding:16px 0 10px">
+        ${head}
+        <p style="font-size:19px;margin:10px 0 6px"><b>${esc(c.cn || "")}</b></p>
+        ${c.example ? `<p class="muted" style="margin-top:2px">${esc(c.example)}</p>` : ""}
+      </div>
+      <div class="flex" style="gap:8px">
+        <button class="btn" id="bWrong" style="color:var(--bad)">记错了</button>
+        ${q >= 4 ? `<button class="btn" id="bEasy">太简单</button>` : ""}
+        <button class="btn primary" style="flex:1;padding:14px;font-size:16px" id="bNext">下一个（空格）</button>
+      </div></div>`;
+    bindMode();
+    if (!isColloc) { const play = () => speak(c.word, { rate: 0.95 }, null); $("#vplay").addEventListener("click", play); later(play, 200); }
+    $("#bWrong").addEventListener("click", () => advance(0));
+    if ($("#bEasy")) $("#bEasy").addEventListener("click", () => advance(5));
+    $("#bNext").addEventListener("click", () => advance(q));
+    VKEY = k => { if (k === " " || k === "Enter") advance(q); };
+  };
+
+  const renderChoice = (c) => {
+    const isColloc = c.kind === "colloc";
+    const correct = isColloc ? c.answer : (c.cn || "");
+    const pool = allVocab().filter(x => x.id !== c.id && x.kind === c.kind).map(x => isColloc ? x.answer : x.cn).filter(Boolean);
+    const distractors = shuffle([...new Set(pool)].filter(x => x !== correct)).slice(0, 3);
+    const opts = shuffle([correct].concat(distractors));
+    APP.innerHTML = `<div class="card">${header()}
+      <div style="text-align:center;padding:16px 0 10px">
+        ${isColloc
+          ? `<div class="stimulus" style="font-size:18px;text-align:left">${esc(c.sentence).replace("___", "<b class='blankslot'>&nbsp;___&nbsp;</b>")}</div>`
+          : `<div style="font-size:40px;font-weight:800">${esc(c.word)}</div><button class="btn ghost" id="vplay">🔊</button>`}
+      </div>
+      <div id="copts">${opts.map(o => `<div class="opt" data-o="${esc(o)}" style="justify-content:center;font-size:16px;padding:13px">${esc(o)}</div>`).join("")}</div>
+      <div id="vafter"></div></div>`;
+    bindMode();
+    if (!isColloc) { const play = () => speak(c.word, { rate: 0.95 }, null); $("#vplay").addEventListener("click", play); later(play, 250); }
+    let answered = false;
+    $all("#copts .opt").forEach(el => el.addEventListener("click", () => {
+      if (answered) return; answered = true;
+      const ok = el.dataset.o === correct;
+      $all("#copts .opt").forEach(o => { if (o.dataset.o === correct) o.classList.add("correct"); });
+      if (!ok) el.classList.add("wrong");
+      const q = ok ? 4 : 0;
+      $("#vafter").innerHTML = `${c.example ? `<p class="muted" style="text-align:center">${esc(c.example)}</p>` : ""}
+        <div class="flex" style="gap:8px">${ok ? `<button class="btn" id="bEasy">太简单</button>` : ""}
+        <button class="btn primary" style="flex:1;padding:13px" id="bNext">下一个（空格）</button></div>`;
+      if ($("#bEasy")) $("#bEasy").addEventListener("click", () => advance(5));
+      $("#bNext").addEventListener("click", () => advance(q));
+      VKEY = k => { if (k === " " || k === "Enter") advance(q); };
+    }));
+  };
+
+  const renderSpell = (c) => {
+    APP.innerHTML = `<div class="card">${header()}
+      <div style="text-align:center;padding:14px 0">
+        <button class="btn" id="vplay">🔊 再听一遍</button>
+        <p class="muted small">听音拼写（PTE 拼错 = 0 分）· ${esc(c.cn || "")}</p>
+        <div class="flex" style="margin-top:8px"><input type="text" id="vin" style="flex:1;font-size:18px;padding:10px;text-align:center" placeholder="输入单词后回车" autocomplete="off"></div>
+      </div><div id="vres"></div></div>`;
+    bindMode();
+    const play = () => speak(c.word, { rate: 0.95 }, null);
+    $("#vplay").addEventListener("click", play); later(play, 250);
+    const check = () => {
+      const ok = ($("#vin").value || "").trim().toLowerCase() === c.word.toLowerCase();
+      const q = ok ? 4 : 0;
+      $("#vres").innerHTML = `<p style="text-align:center">${ok ? "<span class='diffok'>✔</span>" : "<span class='diffbad'>✘</span>"} <b style="font-size:24px">${esc(c.word)}</b>${c.example ? `<br><span class="muted small">${esc(c.example)}</span>` : ""}</p>
+        <div class="flex" style="gap:8px">${ok ? `<button class="btn" id="bEasy">太简单</button>` : ""}<button class="btn primary" style="flex:1;padding:13px" id="bNext">下一个（空格）</button></div>`;
+      if ($("#bEasy")) $("#bEasy").addEventListener("click", () => advance(5));
+      $("#bNext").addEventListener("click", () => advance(q));
+      $("#vin").blur();
+      VKEY = k => { if (k === " " || k === "Enter") advance(q); };
     };
-    const checkNow = () => { const v = ($("#vin").value || "").trim().toLowerCase(); showResult(v === answer.toLowerCase()); };
-    $("#vsub").addEventListener("click", checkNow);
-    $("#vin").addEventListener("keydown", e => { if (e.key === "Enter") checkNow(); });
-    $("#vshow").addEventListener("click", () => showResult(false));
+    $("#vin").addEventListener("keydown", e => { if (e.key === "Enter") check(); });
     $("#vin").focus();
   };
-  next();
+
+  render();
 }
+window.viewVocab = viewVocab;
 
 /* ---------------- learn ---------------- */
 const TEMPLATES = [
