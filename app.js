@@ -153,7 +153,7 @@ function vBumpNew() { lsSet("vnew", { date: todayStr(), count: vNewToday() + 1 }
 function vocabDue() {
   const t = todayStr(); const due = [], fresh = [];
   allVocab().forEach(c => { const s = VSRS[c.id]; if (s) { if (s.due <= t) due.push(c); } else fresh.push(c); });
-  const allowance = Math.max(0, (CFG.vNewLimit || 15) - vNewToday()); // 每日新卡上限（设置页可调）
+  const allowance = Math.max(0, (CFG.vNewLimit || 100) - vNewToday()); // 每日新卡上限（设置页可调）
   const lv = c => c.id.startsWith("VH-") ? 0 : (10 + (c.level || 2)); // 错词收录优先，其后按词表等级
   fresh.sort((a, b) => lv(a) - lv(b));
   return due.concat(fresh.slice(0, allowance));
@@ -663,7 +663,7 @@ function viewMemory() {
   const due = srsDue(); const all = Object.keys(SRS);
   const vdue = vocabDue().length;
   APP.innerHTML = `<div class="card"><h2>词汇卡（FIB 学术搭配 + 拼写高危词）</h2>
-    <p>今日到期+新卡 <b>${vdue}</b> · 词库 ${allVocab().length}（内置 ${(BANK.vocab || []).length} + 错词收录 ${HARVEST.length}）· 每日新卡上限 ${CFG.vNewLimit || 15}</p>
+    <p>今日到期+新卡 <b>${vdue}</b> · 词库 ${allVocab().length}（内置 ${(BANK.vocab || []).length} + 错词收录 ${HARVEST.length}）· 每日新卡上限 ${CFG.vNewLimit || 100}</p>
     <div class="flex"><button class="btn primary" ${vdue ? "" : "disabled"} onclick="location.hash='#vocab'">开始背单词</button>
     ${HARVEST.length ? `<button class="btn" onclick="clearHarvest()">清空收录词</button>` : ""}</div>
     <p class="muted small">FIB 做错的空 → 自动生成搭配卡；WFD/听力填空拼错的词 → 自动生成拼写卡。</p>
@@ -901,7 +901,7 @@ function viewSettings() {
     <div class="flex"><label class="btn">导入题库 JSON<input type="file" id="bankFile" accept=".json" style="display:none"></label>
     <button class="btn" onclick="clearCustom()">清空导入题</button></div>
     <p class="muted small">格式见 question-bank/schema.json；批量生成见 generation-prompts.md。</p></div>
-  <div class="card"><h2>词卡设置</h2><p>每日新卡上限 <input type="number" id="vlimit" min="5" max="60" style="width:64px" value="${CFG.vNewLimit || 15}"> <button class="btn" onclick="saveVLimit()">保存</button> <span class="muted small">冲刺期建议 15；词汇基础期建议 25–30</span></p></div>
+  <div class="card"><h2>词卡设置</h2><p>每日新卡上限 <input type="number" id="vlimit" min="5" max="300" style="width:70px" value="${CFG.vNewLimit || 100}"> <button class="btn" onclick="saveVLimit()">保存</button> <span class="muted small">Yuan 目标 100/天；Nicole 基础期 25–30</span></p></div>
   <div class="card"><h2>数据</h2><div class="flex">
     <button class="btn" onclick="exportData()">导出进度</button>
     <label class="btn">导入进度<input type="file" id="progFile" accept=".json" style="display:none"></label>
@@ -925,7 +925,7 @@ window.saveCalib = function () {
   lsSet("cfg", CFG); alert("已校准"); viewSettings();
 };
 window.saveExamDate = function () { CFG.examDate = $("#examDate").value; lsSet("cfg", CFG); viewSettings(); };
-window.saveVLimit = function () { CFG.vNewLimit = Math.max(5, Math.min(60, +$("#vlimit").value || 15)); lsSet("cfg", CFG); alert("已保存"); viewSettings(); };
+window.saveVLimit = function () { CFG.vNewLimit = Math.max(5, Math.min(300, +$("#vlimit").value || 100)); lsSet("cfg", CFG); alert("已保存"); viewSettings(); };
 function importBank(e) {
   const f = e.target.files[0]; if (!f) return;
   const rd = new FileReader();
